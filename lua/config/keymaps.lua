@@ -48,16 +48,16 @@ end, { desc = "Open man page for word under cursor" })
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
--- del keymaps
+-- vim.keymap.set("n", "gcc", function()
+--   local line = vim.api.nvim_get_current_line()
+--
+--   -- 已经是 /* */ 就取消
+--   if line:match("^%s*/%*") and line:match("%*/%s*$") then
+--     line = line:gsub("^%s*/%*%s?", "")
+--     line = line:gsub("%s?%*/%s*$", "")
+--   else
+--     line = "/* " .. line .. " */"
+--   end
+--
+--   vim.api.nvim_set_current_line(line)
+-- end, { desc = "Toggle /* */ comment" })

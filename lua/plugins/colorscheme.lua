@@ -1,10 +1,10 @@
 return {
-	{
-		"LazyVim/LazyVim",
-		opts = {
-			colorscheme = "tokyonight-night",
-		},
-	},
+  {
+    "LazyVim/LazyVim",
+    opts = {
+      colorscheme = "tokyonight-night",
+    },
+  },
   {
     "folke/tokyonight.nvim",
     dependencies = {
@@ -16,21 +16,19 @@ return {
       })
 
       local function highlight_trailing_whitespace()
-        if vim.bo.buftype ~= "" then
+        if vim.bo.buftype ~= ""
+          or vim.bo.filetype == "snacks_dashboard"
+          or vim.bo.filetype == "snacks_terminal" then
           return
         end
         vim.cmd([[match ExtraWhitespace /\s\+$/]])
       end
 
-      vim.api.nvim_create_autocmd({ "BufEnter", "InsertLeave" }, {
-        group = vim.api.nvim_create_augroup("HighlightTrailingWhitespace", { clear = true }),
-        callback = highlight_trailing_whitespace,
-      })
-
-      vim.api.nvim_create_autocmd("TermOpen", {
-        group = vim.api.nvim_create_augroup("NoWhitespaceInTerminal", { clear = true }),
+      vim.api.nvim_create_autocmd("VimEnter", {
         callback = function()
-          vim.cmd("match none")
+          vim.schedule(function()
+            highlight_trailing_whitespace()
+          end)
         end,
       })
     end,
