@@ -28,7 +28,7 @@ augroup cprog
 			  \ '__FUNCTION__ /* __func__ */,      \<CR>' .
 			  \ '__TIME__, __DATE__);              \<CR>' .
 			  \ '} while (0)          /* defined by ' . g:git_username . '*/'
-	autocmd BufLeave *.cpp,*.c,*.h unabbr _dtrace
+	" autocmd BufLeave *.cpp,*.c,*.h unabbr _dtrace
 	imap <F3> <C-R>=strftime("/* yinxianglu1993@gmail.com %Y-%m-%d %H:%M */")<CR><CR>
 
 	command Pf : call C_printf()
