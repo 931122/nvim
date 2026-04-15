@@ -5,9 +5,25 @@ local finders = require("telescope.finders")
 local previewers = require("telescope.previewers")
 local conf = require("telescope.config").values
 
+local function shorten_path(path)
+	local cwd = vim.loop.cwd()
+	local rel = vim.fn.fnamemodify(path, ":.")
+	if rel ~= path then
+		return rel
+	end
+	if path:sub(1, #cwd) == cwd then
+		return path:sub(#cwd + 2)
+	end
+	return vim.fn.pathshorten(path)
+end
+
 -- 运行 global 命令
 local function run_global_cmd(mode, word)
-	local handle = io.popen("global " .. mode .. " " .. word)
+	if vim.fn.executable("global") ~= 1 then
+		vim.notify("global 不在 PATH 中", vim.log.levels.ERROR)
+		return {}
+	end
+	local handle = io.popen("global " .. mode .. " " .. vim.fn.shellescape(word))
 	if not handle then return {} end
 	local result = handle:read("*a")
 	handle:close()
@@ -62,6 +78,13 @@ end
 -- 核心 picker 函数
 function M.gtags_picker(title, mode)
 	local word = vim.fn.expand("<cword>")
+	M.gtags_picker_for_word(title, mode, word)
+end
+
+function M.gtags_picker_for_word(title, mode, word)
+	if not word or word == "" then
+		return
+	end
 	local results = run_global_cmd(mode, word)
 
 	if #results == 0 then
@@ -75,11 +98,13 @@ function M.gtags_picker(title, mode)
 			results = results,
 			entry_maker = function(entry)
 				local file, lnum = parse_global_line(entry)
+				local path = file and vim.fn.fnamemodify(file, ":p") or nil
+				local short = path and shorten_path(path) or entry
 				return {
 					value = entry,
-					display = entry,
+					display = string.format("%s:%d %s", short, lnum or 1, entry),
 					ordinal = entry,
-					filename = file,
+					filename = path,
 					lnum = lnum or 1,
 				}
 			end,
@@ -110,6 +135,55 @@ function M.gtags_picker(title, mode)
 	}):find()
 end
 
+function M.jump_to_definition(word)
+	if not word or word == "" then
+		return false
+	end
+
+	local results = run_global_cmd("-x", word)
+	if #results == 0 then
+		return false
+	end
+
+	if #results == 1 then
+		local file, lnum = parse_global_line(results[1])
+		if not file then
+			return false
+		end
+		local path = vim.fn.fnamemodify(file, ":p")
+		vim.cmd("edit " .. vim.fn.fnameescape(path))
+		vim.schedule(function()
+			local total = vim.api.nvim_buf_line_count(0)
+			vim.api.nvim_win_set_cursor(0, { math.min(lnum or 1, total), 0 })
+			vim.cmd("normal! zz")
+		end)
+	else
+		M.gtags_picker_for_word("Global Definitions", "-x", word)
+	end
+
+	return true
+end
+
+function M.build_database()
+	if vim.fn.executable("gtags") ~= 1 then
+		vim.notify("gtags 不在 PATH 中", vim.log.levels.ERROR)
+		return
+	end
+
+	local root = vim.loop.cwd()
+	vim.notify("Generating GTAGS: " .. root, vim.log.levels.INFO)
+	vim.system({ "gtags" }, { cwd = root, text = true }, function(result)
+		vim.schedule(function()
+			if result.code == 0 then
+				vim.notify("GTAGS 已生成: " .. root, vim.log.levels.INFO)
+			else
+				local msg = result.stderr ~= "" and result.stderr or result.stdout
+				vim.notify("gtags 生成失败\n" .. msg, vim.log.levels.ERROR)
+			end
+		end)
+	end)
+end
+
 
 -- 快捷键注册
 function M.setup_keymaps()
@@ -120,10 +194,11 @@ function M.setup_keymaps()
 	vim.keymap.set("n", "<leader>r", function()
 		M.gtags_picker("Global References", "-r")
 	end, { desc = "Gtags: 查找引用" })
+
+	vim.keymap.set("n", "<leader>gb", M.build_database, { desc = "Build GTAGS" })
 end
 
 -- 初始化（自动注册按键）
 M.setup_keymaps()
 return M
-
 

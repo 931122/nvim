@@ -1,6 +1,8 @@
 return {
   "neovim/nvim-lspconfig",
   init = function()
+    vim.diagnostic.enable(false)
+
     vim.api.nvim_create_autocmd("FileType", {
       group = vim.api.nvim_create_augroup("local_dts_lsp", { clear = true }),
       pattern = "dts",
