@@ -1,9 +1,23 @@
 return {
   "neovim/nvim-lspconfig",
-
-  config = function(_, opts)
-
-    vim.lsp.config.clangd = {
+  init = function()
+    vim.api.nvim_create_autocmd("FileType", {
+      group = vim.api.nvim_create_augroup("local_dts_lsp", { clear = true }),
+      pattern = "dts",
+      callback = function()
+        local git_dir = vim.fs.find(".git", { upward = true })[1]
+        local root_dir = git_dir and vim.fs.dirname(git_dir) or vim.loop.cwd()
+        vim.lsp.start({
+          name = "dts-lsp",
+          cmd = { "dts-lsp" },
+          root_dir = root_dir,
+        })
+      end,
+    })
+  end,
+  opts = function(_, opts)
+    opts.servers = opts.servers or {}
+    opts.servers.clangd = vim.tbl_deep_extend("force", opts.servers.clangd or {}, {
       cmd = {
         "clangd",
         "--clang-tidy",
@@ -14,40 +28,8 @@ return {
         "--fallback-style=llvm",
         "--cross-file-rename",
         "--header-insertion=never",
-      },
-    },
-
-    -- require("mason").setup()
-    -- require("mason-lspconfig").setup({
-    --   ensure_installed = { "jdtls" }, -- Java LSP
-    -- })
-    -- require("lspconfig").jdtls.setup{
-    --   cmd = {"jdtls"},
-    --   root_dir = require("lspconfig.util").root_pattern(".git", "mvnw", "gradlew"),
-    -- }
-
-    require("lspconfig").clangd.setup {
-      cmd = {
-        "clangd",
-        "--header-insertion=never",
         "--header-insertion-decorators=0",
-      }
-    }
-
-    -- dts
-    vim.api.nvim_create_autocmd('FileType', {
-      pattern = "dts",
-      callback = function (ev)
-        vim.lsp.start({
-          name = 'dts-lsp',
-          cmd = {'dts-lsp'},
-          root_dir = vim.fs.dirname(vim.fs.find({'.git'}, { upward = true })[1]),
-        })
-      end
+      },
     })
-
-    -- disable lsp diagnostic
-    vim.diagnostic.disable()
-
   end,
 }

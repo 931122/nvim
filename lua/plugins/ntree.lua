@@ -2,11 +2,15 @@ return {
 	{
 		"nvim-tree/nvim-tree.lua",
 		dependencies = { "nvim-tree/nvim-web-devicons" }, -- 图标支持
-		config = function()
-			-- 禁用 netrw
+		cmd = { "NvimTreeToggle", "NvimTreeFindFile", "NvimTreeFocus" },
+		keys = {
+			{ "<leader>N", "<cmd>NvimTreeToggle<CR>", desc = "Toggle NvimTree" },
+		},
+		init = function()
 			vim.g.loaded_netrw = 1
 			vim.g.loaded_netrwPlugin = 1
-
+		end,
+		config = function()
 			local nvim_tree = require("nvim-tree")
 
 			nvim_tree.setup({
@@ -46,11 +50,8 @@ return {
 					vim.keymap.set('n', 's', api.node.open.horizontal_no_picker, opts('Open: Horizontal Split'))
 					vim.keymap.set('n', 'v', api.node.open.vertical_no_picker, opts('Open: Vertical Split'))
 					vim.keymap.set('n', '<CR>', api.node.open.edit, opts('Open: Edit'))
-
-					vim.keymap.set("n", "<leader>N", ":NvimTreeToggle<CR>")
 				end,
 			})
 		end,
 	},
 }
-
