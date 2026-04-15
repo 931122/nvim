@@ -160,7 +160,7 @@ augroup cprog
     func Title(type)
 		let ctype=a:type
         if strridx(ctype, "sh") == 0
-          let fch="#! \\/bin\\/bash\\r#"
+          let fch="#!\\/usr\\/bin\\/env bash\\r#"
           let cch="#"
         elseif strridx(ctype, "py") == 0
           let fch="#!\\/usr\\/bin\\/env python\r# coding=utf-8\r#"
