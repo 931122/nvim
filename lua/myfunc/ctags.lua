@@ -1,5 +1,5 @@
-local M = {}
 local nav_utils = require("tools.nav_utils")
+local M = {}
 local default_excludes = {
   ".git",
   ".hg",
@@ -33,8 +33,6 @@ local source_patterns = {
   "*.js",
   "*.ts",
 }
-
-nav_utils.ensure_preview_highlight("TagPreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
 
 local function find_ctags()
   if vim.fn.executable("ctags") == 1 then
@@ -417,6 +415,7 @@ local function inspect_tag()
   vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO, { title = "Tag Inspect" })
 end
 
+nav_utils.ensure_preview_highlight("TagPreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
 vim.opt.tags:prepend({ "./tags;", "./TAGS;" })
 vim.opt.tags:append({ "tags", "TAGS" })
 

@@ -1,5 +1,3 @@
-local M = {}
-
 local pickers = require("telescope.pickers")
 local finders = require("telescope.finders")
 local previewers = require("telescope.previewers")
@@ -7,8 +5,7 @@ local nav_utils = require("tools.nav_utils")
 local putils = require("telescope.previewers.utils")
 local conf = require("telescope.config")
 local preview_ns = vim.api.nvim_create_namespace("GtagsTelescopePreview")
-
-nav_utils.ensure_preview_highlight("GtagsPreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
+local M = {}
 
 -- 运行 global 命令
 local function run_global_cmd(mode, word)
@@ -16,11 +13,15 @@ local function run_global_cmd(mode, word)
 		vim.notify("global 不在 PATH 中", vim.log.levels.ERROR)
 		return {}
 	end
-	local handle = io.popen("global " .. mode .. " " .. vim.fn.shellescape(word))
-	if not handle then return {} end
-	local result = handle:read("*a")
-	handle:close()
-	return vim.split(result, "\n", { trimempty = true })
+	local result = vim.system({ "global", mode, word }, { text = true }):wait()
+	if result.code ~= 0 then
+		local msg = result.stderr ~= "" and result.stderr or result.stdout
+		if msg and msg ~= "" then
+			vim.notify("global 执行失败\n" .. msg, vim.log.levels.ERROR)
+		end
+		return {}
+	end
+	return vim.split(result.stdout or "", "\n", { trimempty = true })
 end
 
 -- 提取文件路径与行号
@@ -165,19 +166,16 @@ function M.build_database()
 end
 
 
--- 快捷键注册
-function M.setup_keymaps()
-	vim.keymap.set("n", "<leader>]", function()
-		M.gtags_picker("Global Definitions", "-x")
-	end, { desc = "Gtags: 查找定义" })
+nav_utils.ensure_preview_highlight("GtagsPreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
 
-	vim.keymap.set("n", "<leader>r", function()
-		M.gtags_picker("Global References", "-r")
-	end, { desc = "Gtags: 查找引用" })
+vim.keymap.set("n", "<leader>]", function()
+	M.gtags_picker("Global Definitions", "-x")
+end, { desc = "Gtags: 查找定义" })
 
-	vim.keymap.set("n", "<leader>gb", M.build_database, { desc = "Build GTAGS" })
-end
+vim.keymap.set("n", "<leader>r", function()
+	M.gtags_picker("Global References", "-r")
+end, { desc = "Gtags: 查找引用" })
 
--- 初始化（自动注册按键）
-M.setup_keymaps()
+vim.keymap.set("n", "<leader>gT", M.build_database, { desc = "Build GTAGS" })
+
 return M

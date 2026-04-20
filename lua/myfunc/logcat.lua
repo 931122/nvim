@@ -1,5 +1,5 @@
 -- logcat.lua
-local M = {}
+local logcat_group = vim.api.nvim_create_augroup("myfunc_logcat", { clear = true })
 
 -- ==============================
 -- 1️⃣ 高亮逻辑
@@ -53,26 +53,6 @@ local function setup_logcat_highlight()
 end
 
 -- ==============================
--- 2️⃣ 自动启用 logcat 高亮
--- ==============================
-vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
-  pattern = { "*.logcat", "*logcat*.log", "*logcat*.txt" },
-  callback = setup_logcat_highlight,
-})
-
--- ==============================
--- 3️⃣ 折叠同等级日志
--- ==============================
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = "logcat",
-  callback = function()
-    vim.opt_local.foldmethod = "expr"
-    vim.opt_local.foldexpr = [[getline(v:lnum)=~'^\d\d-\d\d.*\s[VDIWEF]\s' ? 1 : 0]]
-    vim.opt_local.foldlevel = 99
-  end
-})
-
--- ==============================
 -- 4️⃣ 日志过滤命令
 -- ==============================
 local function filter_logcat(level)
@@ -85,23 +65,7 @@ local function filter_logcat(level)
   vim.cmd(string.format([[silent! v/\v^\d\d-\d\d.*\s%s\s/d]], level))
 end
 
-vim.api.nvim_create_user_command("LogcatError", function() filter_logcat("E") end, {desc="只保留 E/ 日志"})
-vim.api.nvim_create_user_command("LogcatWarn", function() filter_logcat("W") end, {desc="只保留 W/ 日志"})
-vim.api.nvim_create_user_command("LogcatInfo", function() filter_logcat("I") end, {desc="只保留 I/ 日志"})
-vim.api.nvim_create_user_command("LogcatDebug", function() filter_logcat("D") end, {desc="只保留 D/ 日志"})
-vim.api.nvim_create_user_command("LogcatVerbose", function() filter_logcat("V") end, {desc="只保留 V/ 日志"})
-vim.api.nvim_create_user_command("LogcatFatal", function() filter_logcat("F") end, {desc="只保留 F/ 日志"})
-
--- 恢复原始内容
-vim.api.nvim_create_user_command("LogcatClearFilter", function()
-  vim.cmd("edit!")
-  print("过滤已清除")
-end, {desc="重载文件清除过滤"})
-
--- ==============================
--- 5️⃣ 实时 adb logcat 流式显示
--- ==============================
-vim.api.nvim_create_user_command("AdbLogcat", function()
+local function open_adb_logcat()
   -- 新建垂直窗口
   vim.cmd("vnew")
   vim.bo.buftype = "nofile"
@@ -135,6 +99,38 @@ vim.api.nvim_create_user_command("AdbLogcat", function()
       end)
     end
   end)
-end, {desc="实时显示 adb logcat"})
+end
 
-return M
+-- ==============================
+-- 2️⃣ 自动启用 logcat 高亮
+-- ==============================
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+  group = logcat_group,
+  pattern = { "*.logcat", "*logcat*.log", "*logcat*.txt" },
+  callback = setup_logcat_highlight,
+})
+
+-- ==============================
+-- 3️⃣ 折叠同等级日志
+-- ==============================
+vim.api.nvim_create_autocmd("FileType", {
+  group = logcat_group,
+  pattern = "logcat",
+  callback = function()
+    vim.opt_local.foldmethod = "expr"
+    vim.opt_local.foldexpr = [[getline(v:lnum)=~'^\d\d-\d\d.*\s[VDIWEF]\s' ? 1 : 0]]
+    vim.opt_local.foldlevel = 99
+  end,
+})
+
+vim.api.nvim_create_user_command("LogcatError", function() filter_logcat("E") end, { desc = "只保留 E/ 日志" })
+vim.api.nvim_create_user_command("LogcatWarn", function() filter_logcat("W") end, { desc = "只保留 W/ 日志" })
+vim.api.nvim_create_user_command("LogcatInfo", function() filter_logcat("I") end, { desc = "只保留 I/ 日志" })
+vim.api.nvim_create_user_command("LogcatDebug", function() filter_logcat("D") end, { desc = "只保留 D/ 日志" })
+vim.api.nvim_create_user_command("LogcatVerbose", function() filter_logcat("V") end, { desc = "只保留 V/ 日志" })
+vim.api.nvim_create_user_command("LogcatFatal", function() filter_logcat("F") end, { desc = "只保留 F/ 日志" })
+vim.api.nvim_create_user_command("LogcatClearFilter", function()
+  vim.cmd("edit!")
+  print("过滤已清除")
+end, { desc = "重载文件清除过滤" })
+vim.api.nvim_create_user_command("AdbLogcat", open_adb_logcat, { desc = "实时显示 adb logcat" })

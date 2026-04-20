@@ -1,5 +1,3 @@
--- This file is automatically loaded by lazyvim.config.init
-
 -- DO NOT USE `LazyVim.safe_keymap_set` IN YOUR OWN CONFIG!!
 -- use `vim.keymap.set` instead
 -- local map = LazyVim.safe_keymap_set
@@ -81,10 +79,6 @@ map({ "i", "x", "n", "s" }, "<C-s>", "<cmd>w<cr><esc>", { desc = "Save File" })
 -- better indenting
 map("x", "<", "<gv")
 map("x", ">", ">gv")
-
--- commenting
-map("n", "gco", "o<esc>Vcx<esc><cmd>normal gcc<cr>fxa<bs>", { desc = "Add Comment Below" })
-map("n", "gcO", "O<esc>Vcx<esc><cmd>normal gcc<cr>fxa<bs>", { desc = "Add Comment Above" })
 
 -- lazy
 map("n", "<leader>l", "<cmd>Lazy<cr>", { desc = "Lazy" })

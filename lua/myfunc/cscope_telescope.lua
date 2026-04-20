@@ -1,5 +1,3 @@
-local M = {}
-
 local pickers = require("telescope.pickers")
 local finders = require("telescope.finders")
 local previewers = require("telescope.previewers")
@@ -7,8 +5,7 @@ local putils = require("telescope.previewers.utils")
 local conf = require("telescope.config").values
 local nav_utils = require("tools.nav_utils")
 local preview_ns = vim.api.nvim_create_namespace("CscopeTelescopePreview")
-
-nav_utils.ensure_preview_highlight("CscopePreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
+local M = {}
 
 local function find_cscope_db()
   local start = vim.fn.expand("%:p:h")
@@ -32,15 +29,24 @@ local function run_cscope(mode, word)
     return {}
   end
 
-  local cmd = string.format("cscope -d -f %s -L -%s %s", vim.fn.shellescape(db), mode, vim.fn.shellescape(word))
-  local handle = io.popen(cmd)
-  if not handle then
+  local result = vim.system({
+    "cscope",
+    "-d",
+    "-f",
+    db,
+    "-L",
+    "-" .. mode,
+    word,
+  }, { text = true }):wait()
+
+  if result.code ~= 0 then
+    local msg = result.stderr ~= "" and result.stderr or result.stdout
+    if msg and msg ~= "" then
+      vim.notify("cscope 执行失败\n" .. msg, vim.log.levels.ERROR)
+    end
     return {}
   end
-
-  local output = handle:read("*a")
-  handle:close()
-  return vim.split(output, "\n", { trimempty = true })
+  return vim.split(result.stdout or "", "\n", { trimempty = true })
 end
 
 local function parse_cscope_line(line)
@@ -144,6 +150,7 @@ function M.find_callees()
   open_picker("Function Callees", "2")
 end
 
+nav_utils.ensure_preview_highlight("CscopePreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
 vim.keymap.set("n", "<leader>fc", M.find_callers, { desc = "Find function callers" })
 vim.keymap.set("n", "<leader>fC", M.find_callees, { desc = "Find function callees" })
 
