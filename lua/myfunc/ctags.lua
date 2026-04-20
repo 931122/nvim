@@ -1,4 +1,5 @@
 local nav_utils = require("tools.nav_utils")
+local telescope_utils = require("tools.telescope_utils")
 local M = {}
 local default_excludes = {
   ".git",
@@ -65,10 +66,12 @@ local function has_tagfile(root)
   return vim.fn.filereadable(tagfile(root)) == 1
 end
 
-local function ensure_tag_path(tags)
+local function ensure_tag_path(tags, local_to_buffer)
   local escaped = vim.fn.fnameescape(tags)
-  if not vim.tbl_contains(vim.opt.tags:get(), tags) then
-    vim.cmd("set tags^=" .. escaped)
+  local opt = local_to_buffer and vim.opt_local.tags or vim.opt.tags
+  local cmd = local_to_buffer and "setlocal tags^=" or "set tags^="
+  if not vim.tbl_contains(opt:get(), tags) then
+    vim.cmd(cmd .. escaped)
   end
 end
 
@@ -98,7 +101,7 @@ local function run_system_ctags(cmd, target)
   vim.system(cmd, { text = true }, function(result)
     vim.schedule(function()
       if result.code == 0 then
-        ensure_tag_path(target)
+        ensure_tag_path(target, false)
         vim.notify("tags 已生成: " .. target, vim.log.levels.INFO)
       else
         local msg = result.stderr ~= "" and result.stderr or result.stdout
@@ -155,7 +158,7 @@ local function detect_tags_for_current_buffer()
 
   if found then
     local tags = vim.fn.fnamemodify(found, ":p")
-    ensure_tag_path(tags)
+    ensure_tag_path(tags, true)
   end
 end
 
@@ -194,6 +197,38 @@ local function tag_fallback_lnum(tag)
     return num
   end
   return 1
+end
+
+local function escape_tag_pattern(word)
+  return vim.fn.escape(word, [[\.^$~[]*]])
+end
+
+local function get_exact_tags(word)
+  local pattern = "^" .. escape_tag_pattern(word) .. "$"
+  local tags = vim.fn.taglist(pattern)
+  if not tags or vim.tbl_isempty(tags) then
+    return {}
+  end
+
+  local seen = {}
+  local results = {}
+  for _, tag in ipairs(tags) do
+    local filename = vim.fn.fnamemodify(tag.filename or "", ":p")
+    local cmd = type(tag.cmd) == "string" and tag.cmd or tostring(tag.cmd or "")
+    local key = table.concat({
+      tag.name or "",
+      filename,
+      cmd,
+      tag.kind or "",
+    }, "\0")
+    if not seen[key] then
+      seen[key] = true
+      tag.filename = filename
+      table.insert(results, tag)
+    end
+  end
+
+  return results
 end
 
 local function locate_tag_in_window(tag, winid, fallback)
@@ -266,30 +301,43 @@ local function locate_tag_position(tag, filename, winid)
   return math.min(math.max(locate_tag_in_window(tag, winid, fallback), 1), line_count)
 end
 
-local function telescope_select_tag()
+local function open_tag_result(tag, word)
+  local filename = vim.fn.fnamemodify(tag.filename or "", ":p")
+  telescope_utils.open_entry({
+    value = tag,
+    filename = filename,
+    lnum = tag_fallback_lnum(tag),
+  }, {
+    push_tagstack = true,
+    tagname = tag.name or word,
+    resolve_line = function(entry)
+      return locate_tag_position(entry.value, entry.filename, 0)
+    end,
+  })
+end
+
+local select_tag
+
+local function telescope_select_tag(tags, word)
   local ok, pickers = pcall(require, "telescope.pickers")
   local ok_finders, finders = pcall(require, "telescope.finders")
   local ok_conf, conf = pcall(require, "telescope.config")
-  local ok_previewers, previewers = pcall(require, "telescope.previewers")
-  local ok_putils, putils = pcall(require, "telescope.previewers.utils")
-  local ok_actions, actions = pcall(require, "telescope.actions")
-  local ok_state, action_state = pcall(require, "telescope.actions.state")
-  if not (ok and ok_finders and ok_conf and ok_previewers and ok_putils and ok_actions and ok_state) then
-    return select_tag()
-  end
-
-  local word = vim.fn.expand("<cword>")
+  word = word or vim.fn.expand("<cword>")
   if word == nil or word == "" then
     return
   end
-
-  local tags = vim.fn.taglist(word)
+  if not (ok and ok_finders and ok_conf) then
+    vim.cmd("tselect " .. vim.fn.fnameescape(word))
+    return
+  end
+  tags = tags or get_exact_tags(word)
   if not tags or vim.tbl_isempty(tags) then
-    vim.notify("没有找到 tag: " .. word, vim.log.levels.INFO)
+    telescope_utils.notify_no_results("tag", word)
     return
   end
 
   pickers.new({}, {
+    cache_picker = false,
     prompt_title = "Tags: " .. word,
     finder = finders.new_table({
       results = tags,
@@ -317,55 +365,42 @@ local function telescope_select_tag()
         }
       end,
     }),
-    previewer = previewers.new_buffer_previewer({
+    previewer = telescope_utils.make_file_previewer({
       title = "Tag Preview",
-      define_preview = function(self, entry)
-        if entry.filename == "" then
-          return
-        end
-        local bufnr = self.state.bufnr
-        local filepath = entry.filename
-        local ft = vim.filetype.match({ filename = filepath }) or ""
-        conf.values.buffer_previewer_maker(filepath, bufnr, {
-          bufname = self.state.bufname,
-          winid = self.state.winid,
-          callback = function(preview_bufnr)
-            nav_utils.configure_preview_buffer(preview_bufnr, ft)
-            putils.highlighter(preview_bufnr, ft)
-
-            local target = locate_tag_position(entry.value, filepath, self.state.winid)
-            nav_utils.focus_preview_line(self.state.winid, preview_bufnr, tag_preview_ns, "TagPreviewLine", target)
-          end,
-        })
+      namespace = tag_preview_ns,
+      highlight = "TagPreviewLine",
+      resolve_line = function(entry, winid)
+        return locate_tag_position(entry.value, entry.filename, winid)
       end,
     }),
     sorter = conf.values.generic_sorter({}),
-    attach_mappings = function(prompt_bufnr, map)
-      local function open_tag()
-        local entry = action_state.get_selected_entry()
-        actions.close(prompt_bufnr)
-        if not entry or entry.filename == "" then
-          return
-        end
-        vim.cmd("edit " .. vim.fn.fnameescape(entry.filename))
-        local target = locate_tag_position(entry.value, entry.filename, 0)
-        vim.api.nvim_win_set_cursor(0, { target, 0 })
-        vim.cmd("normal! zz")
-      end
-
-      map("i", "<CR>", open_tag)
-      map("n", "<CR>", open_tag)
-      return true
-    end,
+    attach_mappings = telescope_utils.attach_open({ "i", "n" }, {
+      push_tagstack = true,
+      tagname = function(entry)
+        return entry.value and entry.value.name or word
+      end,
+      resolve_line = function(entry)
+        return locate_tag_position(entry.value, entry.filename, 0)
+      end,
+    }),
   }):find()
 end
 
-local function select_tag()
+select_tag = function()
   local word = vim.fn.expand("<cword>")
   if word == nil or word == "" then
     return
   end
-  vim.cmd("tselect " .. vim.fn.fnameescape(word))
+  local tags = get_exact_tags(word)
+  if not tags or vim.tbl_isempty(tags) then
+    vim.cmd("tselect " .. vim.fn.fnameescape(word))
+    return
+  end
+  if #tags == 1 then
+    open_tag_result(tags[1], word)
+    return
+  end
+  telescope_select_tag(tags, word)
 end
 
 local function jump_tag()
@@ -374,17 +409,14 @@ local function jump_tag()
     return
   end
 
-  local tags = vim.fn.taglist(word)
+  local tags = get_exact_tags(word)
   if tags and not vim.tbl_isempty(tags) then
     if #tags > 1 then
-      telescope_select_tag()
+      telescope_select_tag(tags, word)
       return
     end
 
-    local ok = pcall(vim.cmd, "tag " .. vim.fn.fnameescape(word))
-    if not ok then
-      vim.cmd("tjump " .. vim.fn.fnameescape(word))
-    end
+    open_tag_result(tags[1], word)
     return
   end
 

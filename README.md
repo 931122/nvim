@@ -18,10 +18,12 @@
 ## 定义
 
 - `<C-]>`：跳到定义
-  - 优先走 `ctags`
+  - 优先走 `ctags` 精确匹配
+  - 只有一个结果时直接跳转
+  - 多个结果时弹出 Telescope 选择
   - 如果当前符号没有 tag，会自动回退到 `gtags`
 - `<C-t>`：从 tag 栈返回
-- `<leader>ts`：用 Telescope 选择当前光标单词的定义
+- `<leader>ts`：强制用 Telescope 选择当前光标单词的定义
 - `<leader>]`：用 `gtags` 查定义
 - `<leader>tn`：跳到下一个 tag 匹配
 - `<leader>tp`：跳到上一个 tag 匹配
@@ -39,7 +41,7 @@
 
 - `<leader>tb`：生成项目级 `tags`
 - `<leader>tf`：只给当前文件生成 tag，写到 `.tags.current`
-- `<leader>gb`：在当前工作目录生成 `GTAGS`
+- `<leader>gT`：在当前工作目录生成 `GTAGS`
 
 ## 相关命令
 
@@ -53,7 +55,7 @@
 
 1. 先进入项目根目录。
 2. 执行一次 `<leader>tb`，生成 `tags`。
-3. 执行一次 `<leader>gb`，生成 `GTAGS`。
+3. 执行一次 `<leader>gT`，生成 `GTAGS`。
 4. 如果项目要用调用关系查询，确保项目里有 `cscope.out`。
 5. 日常使用时：
    - 定义：`<C-]>`、`<leader>ts`、`<leader>]`

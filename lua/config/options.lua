@@ -21,8 +21,6 @@ vim.g.lazyvim_picker = "telescope"
 
 vim.g.mapleader = ","
 vim.g.maplocalleader = ","
-vim.opt.relativenumber = false
-vim.g.autoformat = false
 vim.opt.undofile = false
 vim.opt.list = false
 vim.opt.hidden = true

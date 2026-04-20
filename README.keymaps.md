@@ -3,8 +3,12 @@
 ## 定义
 
 - `<C-]>`：跳到定义
-- `<C-t>`：返回上一个 tag 位置
-- `<leader>ts`：Telescope 选择当前光标单词的 tag
+  - 先走 `ctags` 的精确匹配
+  - 只有一个结果时直接跳转
+  - 有多个结果时弹出 Telescope 选择
+  - `ctags` 没命中时，自动回退到 `gtags`
+- `<C-t>`：从 tag 栈返回上一个位置
+- `<leader>ts`：强制打开 Telescope，手动选择当前光标单词的 tag 定义
 - `<leader>]`：用 `gtags` 查定义
 - `<leader>tn`：下一个 tag 匹配
 - `<leader>tp`：上一个 tag 匹配
@@ -22,7 +26,7 @@
 
 - `<leader>tb`：生成项目 `tags`
 - `<leader>tf`：只给当前文件生成 tag
-- `<leader>gb`：生成 `GTAGS`
+- `<leader>gT`：生成 `GTAGS`
 
 ## 排查
 

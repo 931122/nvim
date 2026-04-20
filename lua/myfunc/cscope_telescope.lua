@@ -1,9 +1,8 @@
 local pickers = require("telescope.pickers")
 local finders = require("telescope.finders")
-local previewers = require("telescope.previewers")
-local putils = require("telescope.previewers.utils")
 local conf = require("telescope.config").values
 local nav_utils = require("tools.nav_utils")
+local telescope_utils = require("tools.telescope_utils")
 local preview_ns = vim.api.nvim_create_namespace("CscopeTelescopePreview")
 local M = {}
 
@@ -71,11 +70,12 @@ local function open_picker(title, mode)
 
   local results = run_cscope(mode, word)
   if #results == 0 then
-    vim.notify("cscope: no results for '" .. word .. "'", vim.log.levels.INFO)
+    telescope_utils.notify_no_results("cscope", word)
     return
   end
 
   pickers.new({}, {
+    cache_picker = false,
     prompt_title = title .. " for '" .. word .. "'",
     finder = finders.new_table({
       results = results,
@@ -94,51 +94,16 @@ local function open_picker(title, mode)
         }
       end,
     }),
-    previewer = previewers.new_buffer_previewer({
+    previewer = telescope_utils.make_file_previewer({
       title = "Call Preview",
-      define_preview = function(self, entry)
-        if not entry or not entry.filename then
-          return
-        end
-
-        local bufnr = self.state.bufnr
-        local filepath = entry.filename
-        local ft = vim.filetype.match({ filename = filepath }) or ""
-        conf.buffer_previewer_maker(filepath, bufnr, {
-          bufname = self.state.bufname,
-          winid = self.state.winid,
-          callback = function(preview_bufnr)
-            nav_utils.configure_preview_buffer(preview_bufnr, ft)
-            putils.highlighter(preview_bufnr, ft)
-
-            local line_count = math.max(vim.api.nvim_buf_line_count(preview_bufnr), 1)
-            local target = math.min(math.max(entry.lnum or 1, 1), line_count)
-            nav_utils.focus_preview_line(self.state.winid, preview_bufnr, preview_ns, "CscopePreviewLine", target)
-          end,
-        })
+      namespace = preview_ns,
+      highlight = "CscopePreviewLine",
+      resolve_line = function(entry)
+        return entry.lnum or 1
       end,
     }),
     sorter = conf.generic_sorter({}),
-    attach_mappings = function(_, map)
-      map("i", "<CR>", function(prompt_bufnr)
-        local actions = require("telescope.actions")
-        local state = require("telescope.actions.state")
-        local entry = state.get_selected_entry()
-        actions.close(prompt_bufnr)
-
-        if not entry or not entry.filename then
-          return
-        end
-
-        vim.cmd("edit " .. vim.fn.fnameescape(entry.filename))
-        vim.schedule(function()
-          local total = vim.api.nvim_buf_line_count(0)
-          vim.api.nvim_win_set_cursor(0, { math.min(entry.lnum or 1, total), 0 })
-          vim.cmd("normal! zz")
-        end)
-      end)
-      return true
-    end,
+    attach_mappings = telescope_utils.attach_open({ "i" }),
   }):find()
 end
 
