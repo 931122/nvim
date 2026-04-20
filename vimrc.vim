@@ -1,7 +1,73 @@
-let g:git_username = system('git config user.name')
-let g:git_email = system('git config user.email')
-let g:git_username = substitute(g:git_username, '\n', '', 'g')
-let g:git_email = substitute(g:git_email, '\n', '', 'g')
+let s:git_username = trim(system('git config user.name'))
+let s:git_email = trim(system('git config user.email'))
+
+func s:GetMaintainerName() abort
+	return (s:git_username != "") ? s:git_username : $USER
+endfunc
+
+func s:GetMaintainerEmail() abort
+	return (s:git_email != "") ? s:git_email : 'unknown@example.com'
+endfunc
+
+func s:MaintainerStampComment() abort
+	return '/* ' . s:GetMaintainerEmail() . ' ' . strftime('%Y-%m-%d %H:%M') . ' */'
+endfunc
+
+func s:DtraceAbbr() abort
+	return join([
+				\ '#define dtrace  do { fprintf(stdout, "\033[36mTRACE" \',
+				\ ' "\033[1;34m==>\033[33m%16s" \',
+				\ ' "\033[36m: \033[32m%4d\033[36m: " \',
+				\ ' "\033[35m%-24s \033[34m" \',
+				\ ' "[\033[0;37m%s\033[1;34m," \',
+				\ ' " \033[0;36m%s\033[1;34m]" \',
+				\ ' "\033[0m\n", __FILE__, __LINE__, \',
+				\ ' __FUNCTION__ /* __func__ */, \',
+				\ ' __TIME__, __DATE__); \',
+				\ '} while (0)          /* defined by ' . s:GetMaintainerName() . '*/',
+				\ ], "\<CR>")
+endfunc
+
+func s:CprogSpace() abort
+	let l:prefix = getline('.')[0 : col('.') - 2]
+	let l:word = matchstr(l:prefix, '\k*$')
+	if l:word ==# '_dtrace'
+		return repeat("\<BS>", strlen(l:word)) . s:DtraceAbbr()
+	endif
+	return ' '
+endfunc
+
+func s:SetupCprogBuffer() abort
+	silent! iunmap <buffer> _dtrace
+	silent! iunabbrev <buffer> _dtrace
+	silent! iunmap <buffer> <Space>
+	inoremap <buffer> <expr> <Space> <SID>CprogSpace()
+endfunc
+
+func s:RemoveDtrace() abort
+	let l:view = winsaveview()
+	let l:macro_removed = 0
+	let l:call_removed = 0
+
+	let l:macro_start = search('^\s*#define\s\+dtrace\>', 'nw')
+	if l:macro_start > 0
+		call cursor(l:macro_start, 1)
+		let l:macro_end = search('^\s*}\s*while\s*(0).*defined by', 'nW')
+		if l:macro_end >= l:macro_start
+			execute l:macro_start . ',' . l:macro_end . 'delete _'
+			let l:macro_removed = 1
+		endif
+	endif
+
+	let l:call_removed = len(filter(getline(1, '$'), 'v:val =~# ''^\s*dtrace\s*;\?\s*$'''))
+	if l:call_removed > 0
+		silent! keeppatterns g/^\s*dtrace\s*;\?\s*$/delete _
+	endif
+
+	call winrestview(l:view)
+	echo 'dtrace cleaned: macro=' . l:macro_removed . ', calls=' . l:call_removed
+endfunc
+
 augroup cprog
 	" Set some sensible defaults for editing C-files
 	" Remove all cprog autocommands
@@ -17,27 +83,20 @@ augroup cprog
 	autocmd BufNewFile *.c  call Lc()
 	autocmd BufNewFile *.py  call Lpy()
 
-	autocmd BufEnter *.cpp,*.c,*.h execute 'abbr _dtrace' . 
-			  \ ' #define dtrace  do { fprintf(stdout, "\033[36mTRACE"      \<CR>' .
-			  \ ' "\033[1;34m==>\033[33m%16s"       \<CR>' .
-			  \ ' "\033[36m: \033[32m%4d\033[36m: " \<CR>' .
-			  \ ' "\033[35m%-24s \033[34m"          \<CR>' .
-			  \ ' "[\033[0;37m%s\033[1;34m,"        \<CR>' .
-			  \ ' " \033[0;36m%s\033[1;34m]"        \<CR>' .
-			  \ ' "\033[0m\n", __FILE__, __LINE__,  \<CR>' .
-			  \ '__FUNCTION__ /* __func__ */,      \<CR>' .
-			  \ '__TIME__, __DATE__);              \<CR>' .
-			  \ '} while (0)          /* defined by ' . g:git_username . '*/'
+		autocmd FileType c,cpp call s:SetupCprogBuffer()
 	" autocmd BufLeave *.cpp,*.c,*.h unabbr _dtrace
-	imap <F3> <C-R>=strftime("/* yinxianglu1993@gmail.com %Y-%m-%d %H:%M */")<CR><CR>
+	imap <F3> <C-R>=<SID>MaintainerStampComment()<CR><CR>
+	command! Dtr call s:RemoveDtrace()
+	command! DtraceClean call s:RemoveDtrace()
 
 	command Pf : call C_printf()
 	func C_printf() " add main info
 		let l=line(".")
+		let l:user = s:GetMaintainerName()
 		if &filetype == 'cpp'
-			call setline(line("."), "std::cout << \"===========[yxl :\"<< __FILE__ << \":\"_<< __LINE__ << \"]\" << std::endl;")
+			call setline(line("."), 'std::cout << "===========[' . l:user . ' :" << __FILE__ << ":" << __LINE__ << "]" << std::endl;')
 		elseif &filetype == 'c'
-			call setline(line("."), "printf(\"===========[yxl :%s:%d]\\n\", __FILE__ , __LINE__  );")
+			call setline(line("."), 'printf("===========[' . l:user . ' :%s:%d]\\n", __FILE__ , __LINE__  );')
 		endif
 		exec "normal =="
 	endfunc
@@ -60,23 +119,22 @@ augroup cprog
     command -nargs=1 Ko : call s:Ko_Add(<q-args>)
     func s:Ko_Add(name,...)
         execute ".g/^/s//" .
-            \"#include <linux\\/moduleh>\r" .
-            \"#include <linux\\/inith>\r" .
+            \"#include <linux\\/module.h>\r" .
+            \"#include <linux\\/init.h>\r" .
             \"\r" .
             \"static int __init ".a:name."_init(void)\r" .
             \"{\r" .
-            \"    return 0\r" .
+            \"    return 0;\r" .
             \"}\r" .
             \"\r" .
-            \"static int __exit ".a:name."_exit(void)\r" .
+            \"static void __exit ".a:name."_exit(void)\r" .
             \"{\r" .
-            \"    return 0\r" .
             \"}\r" .
             \"\r" .
             \"module_init(".a:name."_init);\r" .
             \"module_exit(".a:name."_exit);\r" .
             \"\r" .
-            \"MODULE_AUTHOR(\"" .g:git_username. "\");\r" .
+            \"MODULE_AUTHOR(\"" .s:GetMaintainerName(). "\");\r" .
             \"MODULE_DESCRIPTION(\"".a:name." driver\");\r" .
             \"MODULE_LICENSE(\"GPL\");\r"
 	endfunc
@@ -103,7 +161,7 @@ augroup cprog
     command Rc :call RCOMM()
     func RCOMM()  " reverse the block comment.
         exec "normal 1l"
-        if searchpair('^\s*#\s*if\s\+\d\+', '', '^\s*#\s*enif', 'Wb') < 1
+        if searchpair('^\s*#\s*if\s\+\d\+', '', '^\s*#\s*endif', 'Wb') < 1
             return
         endif
         exec '.s#\d\+#\=submatch(0)==0 ? 1 : 0#'
@@ -113,8 +171,8 @@ augroup cprog
 	func COMM(l1, l2) " add the MACRO comment around the block of C/Cpp code.
 		"exec a:l2+1 . \"s%^%#endif    /* comment by yinxianglu */\<CR>%\"
 		"exec a:l2+1 . "s%^%#endif\<CR>%"
-		"exec a:l1 .   "s%^%#if 0     /* by .g:git_username. on ".strftime("%Y-%m-%d")." */\<CR>%"
-		let comment_start = '#if 0     /* by ' . g:git_username . ' on ' . strftime('%Y-%m-%d') . ' */'
+		"exec a:l1 .   "s%^%#if 0     /* by .s:GetMaintainerName(). on ".strftime("%Y-%m-%d")." */\<CR>%"
+		let comment_start = '#if 0     /* by ' . s:GetMaintainerName() . ' on ' . strftime('%Y-%m-%d') . ' */'
 		let comment_end = '#endif'
 
 		" 执行替换命令，将宏注释添加到指定的行
@@ -128,11 +186,11 @@ augroup cprog
         let strLn=getline(".")
         if strLn =~ '^\s*#\s*define'
             let strNew=substitute(strLn, "define", "undef", "")
-            exec setline(iLn, strNew)
+            call setline(iLn, strNew)
             exec iLn
         elseif strLn =~ '^\s*#\s*undef'
             let strNew=substitute(strLn, "undef", "define", "")
-            exec setline(iLn, strNew)
+            call setline(iLn, strNew)
             exec iLn
         endif
 	endfunc
@@ -180,8 +238,8 @@ augroup cprog
 			let defh = "\r\r"
 		endif
 
-		let maintainer_name = (g:git_username != "") ? g:git_username : $USER
-		let maintainer_email = (g:git_email != "") ? g:git_email : 'unknown@example.com'
+		let maintainer_name = s:GetMaintainerName()
+		let maintainer_email = s:GetMaintainerEmail()
 		" 计算填充的空格，保持与第一行一致
 		let rspace = "                                      "
 		let maintainer_line = " Maintainer: " . maintainer_name . "  <" . maintainer_email . ">"
@@ -216,7 +274,7 @@ augroup cprog
 		if strridx(fn,"\.h") > 0
 			let defh="\r\r\r#endif\\/* __" . defn . " *\\/\r"
 		elseif strridx(fn,"\.c") > 0
-			let defh = "\r\r\r\r\r\r#ifdef __cplusplus\r};\r#endif\r"
+			let defh = "\r\r\r#ifdef __cplusplus\r}\r#endif\r"
 		else
 			let defh = "\r\r"
 		endif
