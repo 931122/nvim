@@ -9,9 +9,18 @@ return {
     { "<leader>t", "<cmd>silent! Outline<CR>", desc = "Toggle Outline" },
   },
   init = function()
-    vim.api.nvim_create_autocmd("BufReadPost", {
-      group = vim.api.nvim_create_augroup("OutlineAutoOpen", { clear = true }),
+    local auto_open_group = vim.api.nvim_create_augroup("OutlineAutoOpen", { clear = true })
+    vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+      group = auto_open_group,
       callback = function(args)
+        if not vim.api.nvim_buf_is_valid(args.buf) or args.buf ~= vim.api.nvim_get_current_buf() then
+          return
+        end
+
+        if vim.bo[args.buf].buftype ~= "" then
+          return
+        end
+
         local ft = vim.bo[args.buf].filetype
         local ignore = { "NvimTree", "TelescopePrompt", "help", "lazy", "terminal", "Outline" }
 
@@ -19,15 +28,21 @@ return {
           return
         end
 
-        vim.defer_fn(function()
-          require("outline")
-          vim.cmd("silent! OutlineOpen")
-        end, 10)
+        vim.schedule(function()
+          if not vim.api.nvim_buf_is_valid(args.buf) or args.buf ~= vim.api.nvim_get_current_buf() then
+            return
+          end
+          pcall(vim.cmd, "silent! OutlineOpen!")
+        end)
       end,
     })
   end,
   config = function()
-    require("outline").setup({
+    local outline = require("outline")
+    local auto_close_group = vim.api.nvim_create_augroup("OutlineAutoClose", { clear = true })
+    local outline_keys_group = vim.api.nvim_create_augroup("OutlineCustomKeys", { clear = true })
+
+    outline.setup({
       outline_window = {
         position = "left",
         width = 15,
@@ -45,8 +60,18 @@ return {
       },
     })
 
+    vim.api.nvim_create_autocmd("FileType", {
+      group = outline_keys_group,
+      pattern = "Outline",
+      callback = function(args)
+        vim.keymap.set("n", "<Esc>", function()
+          outline.focus_code()
+        end, { buffer = args.buf, silent = true, desc = "Outline: Focus code" })
+      end,
+    })
+
     vim.api.nvim_create_autocmd("BufEnter", {
-      group = augroup,
+      group = auto_close_group,
       callback = function()
         -- 统计非 floating 的普通窗口数量
         local function count_normal_windows()
