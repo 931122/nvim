@@ -9,6 +9,11 @@ func s:GetMaintainerEmail() abort
 	return (s:git_email != "") ? s:git_email : 'unknown@example.com'
 endfunc
 
+func s:EnglishHeaderDate() abort
+	let l:weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+	return 'date: ' . l:weekdays[str2nr(strftime('%w'))] . strftime(' %Y-%m-%d %H:%M:%S')
+endfunc
+
 func s:MaintainerStampComment() abort
 	return '/* ' . s:GetMaintainerEmail() . ' ' . strftime('%Y-%m-%d %H:%M') . ' */'
 endfunc
@@ -68,6 +73,110 @@ func s:RemoveDtrace() abort
 	echo 'dtrace cleaned: macro=' . l:macro_removed . ', calls=' . l:call_removed
 endfunc
 
+func s:GetTemplateStyle(type) abort
+	if a:type ==# 'sh'
+		return {
+					\ 'prefix_lines': ['#!/usr/bin/env bash'],
+					\ 'banner_open': '#********************************************************************',
+					\ 'comment': '#',
+					\ 'banner_close': '#*******************************************************************/',
+					\ 'footer_open': '#',
+					\ 'footer_close': '#',
+					\ }
+	elseif a:type ==# 'py'
+		return {
+					\ 'prefix_lines': ['#!/usr/bin/env python', '# coding=utf-8'],
+					\ 'banner_open': '#********************************************************************',
+					\ 'comment': '#',
+					\ 'banner_close': '#*******************************************************************/',
+					\ 'footer_open': '#',
+					\ 'footer_close': '#',
+					\ }
+	endif
+	return {
+				\ 'prefix_lines': [],
+				\ 'banner_open': '/********************************************************************',
+				\ 'comment': '*',
+				\ 'banner_close': '********************************************************************/',
+				\ 'footer_open': '/*',
+				\ 'footer_close': '*/',
+				\ }
+endfunc
+
+func s:MakeHeaderGuard(filename) abort
+	let l:guard = toupper(substitute(a:filename, '[^A-Za-z0-9]', '_', 'g'))
+	let l:guard = substitute(l:guard, '_\+', '_', 'g')
+	return '__' . trim(l:guard, '_') . '__'
+endfunc
+
+func s:GetTemplateBounds(type, filename) abort
+	if a:filename =~# '\.\%(h\|hpp\)$'
+		let l:defn = s:MakeHeaderGuard(a:filename)
+		return {
+					\ 'top': ['#ifndef  ' . l:defn, '#define  ' . l:defn],
+					\ 'bottom': ['#endif/* ' . l:defn . ' */'],
+					\ }
+	elseif a:type ==# 'c'
+		return {
+					\ 'top': ['#ifdef __cplusplus', 'extern "C" {', '#endif'],
+					\ 'bottom': ['#ifdef __cplusplus', '}', '#endif'],
+					\ }
+	endif
+	return { 'top': [], 'bottom': [] }
+endfunc
+
+func s:BuildTemplateHeader(type, filename) abort
+	let l:style = s:GetTemplateStyle(a:type)
+	let l:bounds = s:GetTemplateBounds(a:type, a:filename)
+	let l:rspace = "                                      "
+	let l:maintainer_line = " Maintainer: " . s:GetMaintainerName() . "  <" . s:GetMaintainerEmail() . ">"
+	let l:maintainer_padding = strpart(l:rspace, 0, max([0, 66 - len(l:maintainer_line)]))
+	let l:file_padding = strpart(l:rspace, 0, max([0, 34 - len(a:filename) - len($USER)]))
+	let l:lines = copy(l:style.prefix_lines)
+
+	call extend(l:lines, [
+				\ l:style.banner_open,
+				\ l:style.comment . " file: " . a:filename . l:file_padding . s:EnglishHeaderDate() . "*",
+				\ l:style.comment . "                                                                   *",
+				\ l:style.comment . " Description:                                                      *",
+				\ l:style.comment . "                                                                   *",
+				\ l:style.comment . "                                                                   *",
+				\ l:style.comment . l:maintainer_line . l:maintainer_padding . " *",
+				\ l:style.comment . "                                                                   *",
+				\ l:style.comment . " This file is free software;                                       *",
+				\ l:style.comment . "   you are free to modify and/or redistribute it                   *",
+				\ l:style.comment . "   under the terms of the GNU General Public Licence (GPL).        *",
+				\ l:style.comment . "                                                                   *",
+				\ l:style.comment . " Last modified:                                                    *",
+				\ l:style.comment . "                                                                   *",
+				\ l:style.comment . " No warranty, no liability, use this at your own risk!             *",
+				\ l:style.banner_close,
+				\ ])
+	call extend(l:lines, l:bounds.top)
+	return l:lines
+endfunc
+
+func s:BuildTemplateFooter(type, filename) abort
+	let l:style = s:GetTemplateStyle(a:type)
+	let l:bounds = s:GetTemplateBounds(a:type, a:filename)
+	let l:tail = repeat('*', max([0, 24 - (strlen(a:filename) / 2)]))
+	let l:lines = copy(l:bounds.bottom)
+
+	call add(l:lines, l:style.footer_open . l:tail . " End Of File: " . a:filename . " " . l:tail . l:style.footer_close)
+	return l:lines
+endfunc
+
+func s:InsertTemplate(type) abort
+	let l:filename = expand('%:t')
+	let l:template = s:BuildTemplateHeader(a:type, l:filename) + ['', '', ''] + s:BuildTemplateFooter(a:type, l:filename)
+
+	call setline(1, l:template)
+	if line('$') > len(l:template)
+		execute (len(l:template) + 1) . ',$delete _'
+	endif
+	call cursor(min([21, line('$')]), 1)
+endfunc
+
 augroup cprog
 	" Set some sensible defaults for editing C-files
 	" Remove all cprog autocommands
@@ -78,10 +187,10 @@ augroup cprog
 	"   For other files switch it off.
 	"   Don't change the order, it's important that the line with * comes first.
 	"autocmd BufRead *.cpp,*.c,*.h 1;/^{
-	autocmd BufNewFile *.cc,*.cpp,*.cxx,*.h,*.hpp  call Lcpp()
-	autocmd BufNewFile *.sh  call Lsh()
-	autocmd BufNewFile *.c  call Lc()
-	autocmd BufNewFile *.py  call Lpy()
+	autocmd BufNewFile *.cc,*.cpp,*.cxx,*.h,*.hpp  call <SID>InsertTemplate('cpp')
+	autocmd BufNewFile *.sh  call <SID>InsertTemplate('sh')
+	autocmd BufNewFile *.c  call <SID>InsertTemplate('c')
+	autocmd BufNewFile *.py  call <SID>InsertTemplate('py')
 
 		autocmd FileType c,cpp call s:SetupCprogBuffer()
 	" autocmd BufLeave *.cpp,*.c,*.h unabbr _dtrace
@@ -199,98 +308,4 @@ augroup cprog
 	func PTRACE() " ptrace func for cursor
     endf
 
-    func Lcpp()
-        call Title("cpp")         " diff commect char
-    endfun
-
-    func Lsh()
-        call Title("sh")        " comment char
-    endfun
-
-    func Lc()
-        call Title("c")        " comment char
-    endfun
-
-    func Lpy()
-        call Title("py")        " comment char
-    endfun
-
-    func Title(type)
-		let ctype=a:type
-        if strridx(ctype, "sh") == 0
-          let fch="#!\\/usr\\/bin\\/env bash\\r#"
-          let cch="#"
-        elseif strridx(ctype, "py") == 0
-          let fch="#!\\/usr\\/bin\\/env python\r# coding=utf-8\r#"
-          let cch="#"
-        else
-          let fch="\\/"
-          let cch="*"
-        endif
-
-		let fn = strpart(@%, strridx(@%, "/") + 1)
-		if strridx(fn,"\.h") > 0
-			let defn = substitute(toupper(fn), "\\.H", "_DEF_H__", "")
-			let defh = "#ifndef  __" . defn . "\r#define  __" . defn . "\r"
-		elseif strridx(fn,"\.c") > 0
-			let defh = "#ifdef __cplusplus\rextern \"C\" {\r#endif\r"
-		else
-			let defh = "\r\r"
-		endif
-
-		let maintainer_name = s:GetMaintainerName()
-		let maintainer_email = s:GetMaintainerEmail()
-		" 计算填充的空格，保持与第一行一致
-		let rspace = "                                      "
-		let maintainer_line = " Maintainer: " . maintainer_name . "  <" . maintainer_email . ">"
-
-		" 动态计算空格长度
-		let maintainer_padding = strpart(rspace, 0, 66 - len(maintainer_line))
-
-		" 使用动态的 Maintainer 信息和调整过的空格
-		let header =
-                \ fch . "********************************************************************\r" .
-                \ cch . " file: " . fn . strpart(rspace, 0, 35 - len(fn) - len($USER)) .
-                \ strftime("date: %a %Y-%m-%d %H:%M:%S") . "*\r" .
-                \ cch . "                                                                   *\r" .
-                \ cch . " Description:                                                      *\r" .
-                \ cch . "                                                                   *\r" .
-                \ cch . "                                                                   *\r" .
-                \ cch .  maintainer_line . maintainer_padding . " *\r" .
-                \ cch . "                                                                   *\r" .
-                \ cch . " This file is free software;                                       *\r" .
-                \ cch . "   you are free to modify and\\/or redistribute it                   *\r".
-                \ cch . "   under the terms of the GNU General Public Licence (GPL).        *\r" .
-                \ cch . "                                                                   *\r" .
-                \ cch . " Last modified:                                                    *\r" .
-                \ cch . "                                                                   *\r" .
-                \ cch . " No warranty, no liability, use this at your own risk!             *\r" .
-                \ cch . "*******************************************************************\\/\r".
-                \ defh
-
-		" 执行替换命令
-		execute "1g/^/s//" . header
-
-		if strridx(fn,"\.h") > 0
-			let defh="\r\r\r#endif\\/* __" . defn . " *\\/\r"
-		elseif strridx(fn,"\.c") > 0
-			let defh = "\r\r\r#ifdef __cplusplus\r}\r#endif\r"
-		else
-			let defh = "\r\r"
-		endif
-
-		if strridx(ctype, "sh") == 0
-			let fch="#"
-		elseif strridx(ctype, "py") == 0
-			let fch="#"
-		else
-			let fch="\\/"
-		endif
-
-		let rspace = "****************************"
-		execute "$g/$/s//" . defh . fch .
-                \ strpart(rspace, 0, 24-strlen(fn)/2) . " End Of File: " . fn . " " .
-                \ strpart(rspace, 0, 24-strlen(fn)/2) . '\/'
-		execut 21
-	endfun
 augroup END
