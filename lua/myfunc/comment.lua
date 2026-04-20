@@ -11,6 +11,58 @@ local comment_map = {
 	rust = "// ",
 }
 
+local c_comment_group = vim.api.nvim_create_augroup("myfunc_c_block_comment", { clear = true })
+
+local function split_indent(line)
+	local indent, text = line:match("^(%s*)(.*)$")
+	return indent or "", text or ""
+end
+
+local function unwrap_c_block_comment(text)
+	if text == "" then
+		return nil
+	end
+	return text:match("^/%*%s?(.-)%s?%*/$")
+end
+
+local function toggle_c_block_comment_lines()
+	local bufnr = 0
+	local cursor = vim.api.nvim_win_get_cursor(0)
+	local start_row = cursor[1]
+	local end_row = math.min(start_row + vim.v.count1 - 1, vim.api.nvim_buf_line_count(bufnr))
+	local lines = vim.api.nvim_buf_get_lines(bufnr, start_row - 1, end_row, false)
+	local all_commented = true
+	local has_text = false
+
+	for _, line in ipairs(lines) do
+		local _, text = split_indent(line)
+		if text ~= "" then
+			has_text = true
+			if unwrap_c_block_comment(text) == nil then
+				all_commented = false
+				break
+			end
+		end
+	end
+
+	if not has_text then
+		return
+	end
+
+	for i, line in ipairs(lines) do
+		local indent, text = split_indent(line)
+		if text ~= "" then
+			if all_commented then
+				lines[i] = indent .. (unwrap_c_block_comment(text) or text)
+			else
+				lines[i] = indent .. "/* " .. text .. " */"
+			end
+		end
+	end
+
+	vim.api.nvim_buf_set_lines(bufnr, start_row - 1, end_row, false, lines)
+end
+
 -- 判断行是否已有注释
 local function has_comment(line, comment_str)
 	comment_str = vim.pesc(comment_str:match("%S+")) -- 只匹配非空字符
@@ -80,5 +132,17 @@ local function insert_comment_above()
 end
 
 -- 快捷键绑定
-vim.keymap.set("n", "<leader>;", add_line_comment, { noremap = true, silent = true, desc = "行尾追加注释" })
-vim.keymap.set("n", "<leader>O", insert_comment_above, { noremap = true, silent = true, desc = "在当前行上方插入注释" })
+vim.api.nvim_create_autocmd("FileType", {
+	group = c_comment_group,
+	pattern = { "c", "cpp" },
+	callback = function(args)
+		vim.keymap.set("n", "gcc", toggle_c_block_comment_lines, {
+			buffer = args.buf,
+			silent = true,
+			desc = "Toggle /* */ comment",
+		})
+	end,
+})
+
+vim.keymap.set("n", "gce", add_line_comment, { noremap = true, silent = true, desc = "行尾追加注释" })
+vim.keymap.set("n", "gco", insert_comment_above, { noremap = true, silent = true, desc = "在当前行上方插入注释" })

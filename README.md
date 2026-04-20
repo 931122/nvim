@@ -11,34 +11,35 @@
 
 ## 功能分工
 
-- `ctags`：负责定义跳转，偏原生 Vim 的 tag 工作流
-- `gtags`：负责定义搜索、引用搜索
-- `cscope`：负责调用关系，谁调用了谁、当前函数调用了谁
+- `ctags`：原生定义跳转，多定义时用 Telescope 选择
+- `gtags`：定义搜索、引用搜索
+- `cscope`：调用关系搜索，谁调用了谁、当前函数调用了谁
 
-## 快捷键
-
-### Ctags
+## 定义
 
 - `<C-]>`：跳到定义
-  - 优先走原生 `ctags`
-  - 如果当前符号没有 tag，会自动回退到 `gtags` 定义跳转
+  - 优先走 `ctags`
+  - 如果当前符号没有 tag，会自动回退到 `gtags`
 - `<C-t>`：从 tag 栈返回
-- `<leader>tb`：生成项目级 `tags`
-- `<leader>tf`：只给当前文件生成 tag，写到 `.tags.current`
-- `<leader>ts`：用 Telescope 打开当前光标单词的 tag 列表
+- `<leader>ts`：用 Telescope 选择当前光标单词的定义
+- `<leader>]`：用 `gtags` 查定义
 - `<leader>tn`：跳到下一个 tag 匹配
 - `<leader>tp`：跳到上一个 tag 匹配
 
-### Gtags
+## 引用
 
-- `<leader>]`：用 GNU Global 查定义
-- `<leader>r`：用 GNU Global 查引用
-- `<leader>gb`：在当前工作目录生成 `GTAGS`
+- `<leader>r`：用 `gtags` 查引用
 
-### Cscope
+## 调用关系
 
 - `<leader>fc`：查当前函数被谁调用
 - `<leader>fC`：查当前函数调用了谁
+
+## 数据库生成
+
+- `<leader>tb`：生成项目级 `tags`
+- `<leader>tf`：只给当前文件生成 tag，写到 `.tags.current`
+- `<leader>gb`：在当前工作目录生成 `GTAGS`
 
 ## 相关命令
 
@@ -55,9 +56,9 @@
 3. 执行一次 `<leader>gb`，生成 `GTAGS`。
 4. 如果项目要用调用关系查询，确保项目里有 `cscope.out`。
 5. 日常使用时：
-   - `<C-]>`：快速跳定义
-   - `<leader>r`：查引用
-   - `<leader>fc` / `<leader>fC`：查调用关系
+   - 定义：`<C-]>`、`<leader>ts`、`<leader>]`
+   - 引用：`<leader>r`
+   - 调用关系：`<leader>fc` / `<leader>fC`
 
 ## 说明
 

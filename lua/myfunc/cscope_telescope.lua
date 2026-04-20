@@ -5,21 +5,10 @@ local finders = require("telescope.finders")
 local previewers = require("telescope.previewers")
 local putils = require("telescope.previewers.utils")
 local conf = require("telescope.config").values
+local nav_utils = require("tools.nav_utils")
 local preview_ns = vim.api.nvim_create_namespace("CscopeTelescopePreview")
 
-vim.api.nvim_set_hl(0, "CscopePreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
-
-local function shorten_path(path)
-  local cwd = vim.loop.cwd()
-  local rel = vim.fn.fnamemodify(path, ":.")
-  if rel ~= path then
-    return rel
-  end
-  if path:sub(1, #cwd) == cwd then
-    return path:sub(#cwd + 2)
-  end
-  return vim.fn.pathshorten(path)
-end
+nav_utils.ensure_preview_highlight("CscopePreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
 
 local function find_cscope_db()
   local start = vim.fn.expand("%:p:h")
@@ -61,7 +50,7 @@ local function parse_cscope_line(line)
   end
   return {
     filename = vim.fn.fnamemodify(file, ":p"),
-    shortname = shorten_path(vim.fn.fnamemodify(file, ":p")),
+    shortname = nav_utils.shorten_path(vim.fn.fnamemodify(file, ":p")),
     funcname = func,
     lnum = tonumber(lnum) or 1,
     text = text or "",
@@ -109,32 +98,16 @@ local function open_picker(title, mode)
         local bufnr = self.state.bufnr
         local filepath = entry.filename
         local ft = vim.filetype.match({ filename = filepath }) or ""
-
         conf.buffer_previewer_maker(filepath, bufnr, {
           bufname = self.state.bufname,
           winid = self.state.winid,
           callback = function(preview_bufnr)
-            vim.bo[preview_bufnr].buftype = "nofile"
-            vim.bo[preview_bufnr].bufhidden = "wipe"
-            vim.bo[preview_bufnr].swapfile = false
-            vim.bo[preview_bufnr].modifiable = false
-            vim.bo[preview_bufnr].syntax = ft
-
+            nav_utils.configure_preview_buffer(preview_bufnr, ft)
             putils.highlighter(preview_bufnr, ft)
 
             local line_count = math.max(vim.api.nvim_buf_line_count(preview_bufnr), 1)
             local target = math.min(math.max(entry.lnum or 1, 1), line_count)
-            vim.wo[self.state.winid].cursorline = true
-            vim.wo[self.state.winid].wrap = false
-            vim.api.nvim_buf_clear_namespace(preview_bufnr, preview_ns, 0, -1)
-            vim.api.nvim_buf_set_extmark(preview_bufnr, preview_ns, target - 1, 0, {
-              line_hl_group = "CscopePreviewLine",
-            })
-
-            vim.api.nvim_win_call(self.state.winid, function()
-              pcall(vim.api.nvim_win_set_cursor, 0, { target, 0 })
-              vim.cmd("silent! normal! zz")
-            end)
+            nav_utils.focus_preview_line(self.state.winid, preview_bufnr, preview_ns, "CscopePreviewLine", target)
           end,
         })
       end,

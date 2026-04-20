@@ -1,4 +1,5 @@
 local M = {}
+local nav_utils = require("tools.nav_utils")
 local default_excludes = {
   ".git",
   ".hg",
@@ -15,6 +16,7 @@ local default_excludes = {
 }
 local refresh_group = vim.api.nvim_create_augroup("LocalCtags", { clear = true })
 local refresh_timer = nil
+local tag_preview_ns = vim.api.nvim_create_namespace("TagTelescopePreview")
 local source_patterns = {
   "*.c",
   "*.cc",
@@ -31,6 +33,8 @@ local source_patterns = {
   "*.js",
   "*.ts",
 }
+
+nav_utils.ensure_preview_highlight("TagPreviewLine", { bg = "#7f1d1d", fg = "#ffffff", bold = true })
 
 local function find_ctags()
   if vim.fn.executable("ctags") == 1 then
@@ -91,22 +95,7 @@ local function build_base_cmd(root)
   return cmd
 end
 
-local function run_system_ctags(cmd, root)
-  vim.notify("Generating tags: " .. root, vim.log.levels.INFO)
-  vim.system(cmd, { text = true }, function(result)
-    vim.schedule(function()
-      if result.code == 0 then
-        ensure_tag_path(tagfile(root))
-        vim.notify("tags 已生成: " .. tagfile(root), vim.log.levels.INFO)
-      else
-        local msg = result.stderr ~= "" and result.stderr or result.stdout
-        vim.notify("ctags 生成失败\n" .. msg, vim.log.levels.ERROR)
-      end
-    end)
-  end)
-end
-
-local function run_system_ctags_to(cmd, target)
+local function run_system_ctags(cmd, target)
   vim.notify("Generating tags: " .. target, vim.log.levels.INFO)
   vim.system(cmd, { text = true }, function(result)
     vim.schedule(function()
@@ -131,7 +120,7 @@ local function run_ctags()
 
   table.insert(cmd, "-R")
   table.insert(cmd, root)
-  run_system_ctags(cmd, root)
+  run_system_ctags(cmd, tagfile(root))
 end
 
 local function run_ctags_current()
@@ -150,7 +139,7 @@ local function run_ctags_current()
 
   cmd[5] = current_tagfile(root)
   table.insert(cmd, file)
-  run_system_ctags_to(cmd, current_tagfile(root))
+  run_system_ctags(cmd, current_tagfile(root))
 end
 
 local function detect_tags_for_current_buffer()
@@ -192,7 +181,7 @@ local function schedule_refresh_current()
   end)
 end
 
-local function tag_lnum(tag)
+local function tag_fallback_lnum(tag)
   local ex_cmd = tag.cmd
   if type(ex_cmd) == "number" then
     return ex_cmd
@@ -209,14 +198,85 @@ local function tag_lnum(tag)
   return 1
 end
 
+local function locate_tag_in_window(tag, winid, fallback)
+  local ex_cmd = tag and tag.cmd
+  if type(ex_cmd) == "number" then
+    return ex_cmd
+  end
+  if type(ex_cmd) == "string" and ex_cmd ~= "" then
+    local pattern = ex_cmd:match("^/(.*)/;\"$")
+    if pattern and pattern ~= "" then
+      pattern = pattern:gsub("\\/", "/")
+      pattern = pattern:gsub("^%^", "")
+      pattern = pattern:gsub("%$$", "")
+      pattern = pattern:gsub("\\\\", "\\")
+
+      local literal = vim.fn.escape(pattern, [[\]])
+      literal = [[\V]] .. literal
+
+      local ok, found = pcall(vim.api.nvim_win_call, winid, function()
+        vim.fn.cursor(1, 1)
+        return vim.fn.search(literal, "nW")
+      end)
+
+      if ok and type(found) == "number" and found > 0 then
+        return found
+      end
+    end
+  end
+
+  local name = tag and tag.name or ""
+  if name == "" then
+    return fallback
+  end
+
+  local patterns = {}
+  local escaped_name = vim.fn.escape(name, [[\]])
+  local kind = tag.kind or ""
+  if kind == "f" then
+    patterns = {
+      [[\C^\s*.*\<]] .. escaped_name .. [[\>\s*(]],
+      [[\C\<]] .. escaped_name .. [[\>\s*(]],
+    }
+  elseif kind == "d" then
+    patterns = {
+      [[\C^\s*#\s*define\s\+]] .. escaped_name .. [[\>]],
+      [[\C\<]] .. escaped_name .. [[\>]],
+    }
+  else
+    patterns = {
+      [[\C\<]] .. escaped_name .. [[\>]],
+    }
+  end
+
+  for _, pattern in ipairs(patterns) do
+    local ok, found = pcall(vim.api.nvim_win_call, winid, function()
+      vim.fn.cursor(1, 1)
+      return vim.fn.search(pattern, "nW")
+    end)
+    if ok and type(found) == "number" and found > 0 then
+      return found
+    end
+  end
+
+  return fallback
+end
+
+local function locate_tag_position(tag, filename, winid)
+  local line_count = math.max(vim.api.nvim_buf_line_count(winid == 0 and 0 or vim.api.nvim_win_get_buf(winid)), 1)
+  local fallback = math.min(math.max(tag_fallback_lnum(tag), 1), line_count)
+  return math.min(math.max(locate_tag_in_window(tag, winid, fallback), 1), line_count)
+end
+
 local function telescope_select_tag()
   local ok, pickers = pcall(require, "telescope.pickers")
   local ok_finders, finders = pcall(require, "telescope.finders")
   local ok_conf, conf = pcall(require, "telescope.config")
   local ok_previewers, previewers = pcall(require, "telescope.previewers")
+  local ok_putils, putils = pcall(require, "telescope.previewers.utils")
   local ok_actions, actions = pcall(require, "telescope.actions")
   local ok_state, action_state = pcall(require, "telescope.actions.state")
-  if not (ok and ok_finders and ok_conf and ok_previewers and ok_actions and ok_state) then
+  if not (ok and ok_finders and ok_conf and ok_previewers and ok_putils and ok_actions and ok_state) then
     return select_tag()
   end
 
@@ -237,10 +297,11 @@ local function telescope_select_tag()
       results = tags,
       entry_maker = function(tag)
         local filename = vim.fn.fnamemodify(tag.filename or "", ":p")
-        local lnum = tag_lnum(tag)
+        local shortname = nav_utils.shorten_path(filename)
+        local lnum = tag_fallback_lnum(tag)
         local kind = tag.kind or ""
         local scope = tag.class or tag.struct or tag.namespace or tag.enum or ""
-        local text = string.format("%s [%s] %s", tag.name or word, kind ~= "" and kind or "-", filename)
+        local text = string.format("%s [%s] %s", tag.name or word, kind ~= "" and kind or "-", shortname)
         if scope ~= "" then
           text = text .. " :: " .. scope
         end
@@ -265,17 +326,19 @@ local function telescope_select_tag()
           return
         end
         local bufnr = self.state.bufnr
-        local ft = vim.filetype.match({ filename = entry.filename }) or ""
-        vim.fn.bufload(vim.fn.bufadd(entry.filename))
-        local lines = vim.fn.readfile(entry.filename)
-        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-        vim.bo[bufnr].buftype = "nofile"
-        vim.bo[bufnr].bufhidden = "wipe"
-        vim.bo[bufnr].swapfile = false
-        vim.bo[bufnr].modifiable = false
-        vim.bo[bufnr].syntax = ft
-        putils.highlighter(bufnr, ft)
-        pcall(vim.api.nvim_win_set_cursor, self.state.winid, { math.max(entry.lnum, 1), 0 })
+        local filepath = entry.filename
+        local ft = vim.filetype.match({ filename = filepath }) or ""
+        conf.values.buffer_previewer_maker(filepath, bufnr, {
+          bufname = self.state.bufname,
+          winid = self.state.winid,
+          callback = function(preview_bufnr)
+            nav_utils.configure_preview_buffer(preview_bufnr, ft)
+            putils.highlighter(preview_bufnr, ft)
+
+            local target = locate_tag_position(entry.value, filepath, self.state.winid)
+            nav_utils.focus_preview_line(self.state.winid, preview_bufnr, tag_preview_ns, "TagPreviewLine", target)
+          end,
+        })
       end,
     }),
     sorter = conf.values.generic_sorter({}),
@@ -287,7 +350,8 @@ local function telescope_select_tag()
           return
         end
         vim.cmd("edit " .. vim.fn.fnameescape(entry.filename))
-        vim.api.nvim_win_set_cursor(0, { math.max(entry.lnum, 1), 0 })
+        local target = locate_tag_position(entry.value, entry.filename, 0)
+        vim.api.nvim_win_set_cursor(0, { target, 0 })
         vim.cmd("normal! zz")
       end
 
@@ -314,6 +378,11 @@ local function jump_tag()
 
   local tags = vim.fn.taglist(word)
   if tags and not vim.tbl_isempty(tags) then
+    if #tags > 1 then
+      telescope_select_tag()
+      return
+    end
+
     local ok = pcall(vim.cmd, "tag " .. vim.fn.fnameescape(word))
     if not ok then
       vim.cmd("tjump " .. vim.fn.fnameescape(word))

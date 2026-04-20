@@ -30,13 +30,19 @@ map('n', '<leader>fw',
 		require('telescope.builtin').live_grep({ default_text = word })
   end,
 { noremap = true, silent = true, desc = "Telescope live_grep" })
--- 删除行尾空格和 \r
 map("n", "<F12>", function()
-  local search_backup = vim.fn.getreg("/")         -- 保存当前搜索内容
-  vim.cmd([[%s/\s\+\r\?$//e]])                      -- 删除行尾空格 + 可选 \r
-  vim.fn.setreg("/", search_backup)                -- 恢复搜索内容
-  vim.cmd("nohlsearch")                            -- 取消搜索高亮
-end, { silent = true, desc = "del space \\r" })
+  local search_backup = vim.fn.getreg("/") -- 保存当前搜索内容
+  vim.cmd([[%s/\s\+$//e]]) -- 删除行尾空格
+  vim.fn.setreg("/", search_backup) -- 恢复搜索内容
+  vim.cmd("nohlsearch") -- 取消搜索高亮
+end, { silent = true, desc = "del trailing spaces" })
+
+map("n", "<S-F12>", function()
+  local search_backup = vim.fn.getreg("/") -- 保存当前搜索内容
+  vim.cmd([[%s/\r//ge]]) -- 删除文件中的 ^M
+  vim.fn.setreg("/", search_backup) -- 恢复搜索内容
+  vim.cmd("nohlsearch") -- 取消搜索高亮
+end, { silent = true, desc = "del ^M" })
 
 map("n", "<leader>fm", function()
   local word = vim.fn.expand("<cword>")
