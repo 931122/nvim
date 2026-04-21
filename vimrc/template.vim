@@ -1,23 +1,11 @@
 let s:template_manager_dir = expand('<sfile>:p:h')
 
 func s:GetTemplateMaintainerName() abort
-	if exists('*TemplateManagerGetMaintainerName')
-		return TemplateManagerGetMaintainerName()
-	endif
-	if !exists('g:template_manager_maintainer_name')
-		let g:template_manager_maintainer_name = trim(system('git config user.name'))
-	endif
-	return (g:template_manager_maintainer_name !=# '') ? g:template_manager_maintainer_name : $USER
+	return TemplateManagerGetMaintainerName()
 endfunc
 
 func s:GetTemplateMaintainerEmail() abort
-	if exists('*TemplateManagerGetMaintainerEmail')
-		return TemplateManagerGetMaintainerEmail()
-	endif
-	if !exists('g:template_manager_maintainer_email')
-		let g:template_manager_maintainer_email = trim(system('git config user.email'))
-	endif
-	return (g:template_manager_maintainer_email !=# '') ? g:template_manager_maintainer_email : 'unknown@example.com'
+	return TemplateManagerGetMaintainerEmail()
 endfunc
 
 func s:GetTemplateRootDir() abort
