@@ -9,11 +9,22 @@ return {
     { "<leader>t", "<cmd>silent! Outline<CR>", desc = "Toggle Outline" },
   },
   init = function()
+    local outline_utils = require("tools.outline_utils")
     local auto_open_group = vim.api.nvim_create_augroup("OutlineAutoOpen", { clear = true })
+
     vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
       group = auto_open_group,
       callback = function(args)
         if not vim.api.nvim_buf_is_valid(args.buf) or args.buf ~= vim.api.nvim_get_current_buf() then
+          return
+        end
+
+        if outline_utils.is_stale_outline_buffer(args.buf) then
+          vim.schedule(function()
+            if vim.api.nvim_buf_is_valid(args.buf) then
+              pcall(vim.api.nvim_buf_delete, args.buf, { force = true })
+            end
+          end)
           return
         end
 

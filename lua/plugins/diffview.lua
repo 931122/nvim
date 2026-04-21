@@ -1,3 +1,5 @@
+local diffview_close = "<cmd>DiffviewClose<cr>"
+
 local function toggle_diffview()
   local lib = require("diffview.lib")
   if lib.get_current_view() then
@@ -20,10 +22,21 @@ return {
     },
     keys = {
       { "<F10>", toggle_diffview, desc = "Diffview Toggle" },
-      -- { "<leader>gD", "<cmd>DiffviewClose<cr>", desc = "Diffview Close" },
       { "<leader>gH", "<cmd>DiffviewFileHistory<cr>", desc = "Diffview History" },
       { "<leader>gF", "<cmd>DiffviewFileHistory %<cr>", desc = "Diffview File History" },
     },
-    opts = {},
+    opts = {
+      keymaps = {
+        view = {
+          { "n", "q", diffview_close, { desc = "Close Diffview" } },
+        },
+        file_panel = {
+          { "n", "q", diffview_close, { desc = "Close Diffview" } },
+        },
+        file_history_panel = {
+          { "n", "q", diffview_close, { desc = "Close Diffview" } },
+        },
+      },
+    },
   },
 }

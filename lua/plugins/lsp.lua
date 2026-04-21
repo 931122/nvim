@@ -3,6 +3,22 @@ return {
   init = function()
     vim.diagnostic.enable(false)
 
+    vim.api.nvim_create_autocmd("LspAttach", {
+      group = vim.api.nvim_create_augroup("local_lsp_nonfile_uri_guard", { clear = true }),
+      callback = function(args)
+        local name = vim.api.nvim_buf_get_name(args.buf)
+        if not name:match("^diffview://") then
+          return
+        end
+
+        vim.schedule(function()
+          if vim.api.nvim_buf_is_valid(args.buf) then
+            pcall(vim.lsp.buf_detach_client, args.buf, args.data.client_id)
+          end
+        end)
+      end,
+    })
+
     vim.api.nvim_create_autocmd("FileType", {
       group = vim.api.nvim_create_augroup("local_dts_lsp", { clear = true }),
       pattern = "dts",
