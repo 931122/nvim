@@ -53,12 +53,17 @@ function M.open_entry(entry, opts)
     return
   end
 
+  local target_file = vim.fn.fnamemodify(entry.filename, ":p")
+  local current_file = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":p")
+
   if opts and opts.push_tagstack then
     local tagname = type(opts.tagname) == "function" and opts.tagname(entry) or opts.tagname
     M.push_tagstack(tagname)
   end
 
-  vim.cmd("edit " .. vim.fn.fnameescape(entry.filename))
+  if current_file ~= target_file then
+    vim.cmd("edit " .. vim.fn.fnameescape(target_file))
+  end
   vim.schedule(function()
     local target = opts and opts.resolve_line and opts.resolve_line(entry) or entry.lnum or 1
     local total = math.max(vim.api.nvim_buf_line_count(0), 1)

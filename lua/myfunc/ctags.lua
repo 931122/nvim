@@ -191,8 +191,7 @@ local function tag_fallback_lnum(tag)
     return 1
   end
 
-  local trimmed = ex_cmd:gsub("^/", ""):gsub("/;\"?$", "")
-  local num = tonumber(trimmed:match("^(%d+)$"))
+  local num = tonumber(ex_cmd:match("^(%d+)"))
   if num then
     return num
   end
@@ -203,9 +202,15 @@ local function escape_tag_pattern(word)
   return vim.fn.escape(word, [[\.^$~[]*]])
 end
 
-local function get_exact_tags(word)
-  local pattern = "^" .. escape_tag_pattern(word) .. "$"
-  local tags = vim.fn.taglist(pattern)
+local function current_buffer_path()
+  local name = vim.api.nvim_buf_get_name(0)
+  if name == "" then
+    return nil
+  end
+  return vim.fn.fnamemodify(name, ":p")
+end
+
+local function normalize_tags(tags)
   if not tags or vim.tbl_isempty(tags) then
     return {}
   end
@@ -231,25 +236,71 @@ local function get_exact_tags(word)
   return results
 end
 
+local function collect_tags(expr)
+  local filename = current_buffer_path()
+  local ok, tags
+
+  if filename then
+    ok, tags = pcall(vim.fn.taglist, expr, filename)
+    if ok and tags and not vim.tbl_isempty(tags) then
+      return normalize_tags(tags)
+    end
+  end
+
+  ok, tags = pcall(vim.fn.taglist, expr)
+  if not ok then
+    return {}
+  end
+
+  return normalize_tags(tags)
+end
+
+local function get_exact_tags(word)
+  local pattern = "^" .. escape_tag_pattern(word) .. "$"
+  return collect_tags(pattern)
+end
+
+local function get_ranked_tags(word)
+  return collect_tags(word)
+end
+
+local function parse_tag_search_cmd(ex_cmd)
+  if type(ex_cmd) ~= "string" or ex_cmd == "" then
+    return nil, false
+  end
+
+  local delim = ex_cmd:sub(1, 1)
+  if delim ~= "/" and delim ~= "?" then
+    return nil, false
+  end
+
+  local pattern
+  if delim == "/" then
+    pattern = ex_cmd:match("^/(.*)/;?\"?$")
+  else
+    pattern = ex_cmd:match("^%?(.*)%?;?\"?$")
+  end
+
+  if not pattern or pattern == "" then
+    return nil, false
+  end
+
+  pattern = pattern:gsub("\\" .. delim, delim)
+  return pattern, delim == "?"
+end
+
 local function locate_tag_in_window(tag, winid, fallback)
   local ex_cmd = tag and tag.cmd
   if type(ex_cmd) == "number" then
     return ex_cmd
   end
   if type(ex_cmd) == "string" and ex_cmd ~= "" then
-    local pattern = ex_cmd:match("^/(.*)/;\"$")
+    local pattern, backward = parse_tag_search_cmd(ex_cmd)
     if pattern and pattern ~= "" then
-      pattern = pattern:gsub("\\/", "/")
-      pattern = pattern:gsub("^%^", "")
-      pattern = pattern:gsub("%$$", "")
-      pattern = pattern:gsub("\\\\", "\\")
-
-      local literal = vim.fn.escape(pattern, [[\]])
-      literal = [[\V]] .. literal
-
       local ok, found = pcall(vim.api.nvim_win_call, winid, function()
-        vim.fn.cursor(1, 1)
-        return vim.fn.search(literal, "nW")
+        local start_line = backward and vim.api.nvim_buf_line_count(0) or 1
+        vim.fn.cursor(start_line, 1)
+        return vim.fn.search(pattern, backward and "bW" or "W")
       end)
 
       if ok and type(found) == "number" and found > 0 then
@@ -410,6 +461,17 @@ local function jump_tag()
   end
 
   local tags = get_exact_tags(word)
+  if tags and not vim.tbl_isempty(tags) then
+    if #tags > 1 then
+      telescope_select_tag(tags, word)
+      return
+    end
+
+    open_tag_result(tags[1], word)
+    return
+  end
+
+  tags = get_ranked_tags(word)
   if tags and not vim.tbl_isempty(tags) then
     if #tags > 1 then
       telescope_select_tag(tags, word)
